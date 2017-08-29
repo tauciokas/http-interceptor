@@ -59,7 +59,7 @@ app.factory('HttpInterceptor', ['$rootScope', '$q', '$injector', function ($root
                     }
                     break;
                 case 500:
-                    $rootScope.pushAlerts('Critical Error: Something terrible happened...');
+                    $rootScope.pushAlerts('Critical Server Error: Something terrible happened...');
 
                     if(reject.data.message) {
                         $rootScope.pushAlerts(reject.data.message);
@@ -68,10 +68,6 @@ app.factory('HttpInterceptor', ['$rootScope', '$q', '$injector', function ($root
                     console.log(reject);
                     console.log('Error message: ' + reject.data.message + '. End of critical error.');
 
-                    // Resource deletion
-                    if(reject.data.message == 'The HTTP status code "23000" is not valid.') {
-                        $rootScope.pushAlerts('Resource contains uploaded items. Please delete them first and try again.');
-                    }
                     return $q.reject(reject);
                     break;
                 default:
