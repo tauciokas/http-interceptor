@@ -1,0 +1,88 @@
+app.factory('HttpInterceptor', ['$rootScope', '$q', '$injector', function ($rootScope, $q, $injector) {
+    var time = 0;
+    var user = localStorage.getItem('user') ? localStorage.getItem('user') : null;
+    var inFlightAuthRequest = null;
+
+
+    var interceptor = {
+        'request': function(request) {
+            // send authorization headers with every request
+            request.headers.Authorization = 'Bearer ' + localStorage.getItem('token');
+            return request;
+        },
+        'response': function (response) {
+            $(".page-loading").addClass("hidden");
+            return response;
+        },
+        'responseError': function (reject) {
+            var deferred = $q.defer();
+            var $http = $injector.get('$http'); // user to get $http
+            var $state = $injector.get('$state'); // used to reload state
+
+            switch (reject.status) {
+                // 403 forbidden error
+                case 403:
+                    // refresh token on 401 error and resend all requests
+                    var refresh_token = localStorage.getItem('refresh_token') ? localStorage.getItem('refresh_token') : null;
+                    var refresh_url = $rootScope.apiUrl + 'auth/refresh/' + refresh_token;
+
+                    if(reject.config.url !== refresh_url && refresh_token !== null) {
+                        // send token refresh
+                        if(!inFlightAuthRequest) {
+                            inFlightAuthRequest = $injector.get("$http").get($rootScope.apiUrl + 'auth/refresh/' + refresh_token);
+                        }
+                        
+                        // handle callback response
+                        inFlightAuthRequest.then(
+                            function(res) {
+                                inFlightAuthRequest = null;
+                                // store new tokens
+                                localStorage.setItem('token', res.data.result.access_token);
+                                localStorage.setItem('refresh_token',res.data.result.refresh_token);
+                                localStorage.setItem('user_id', res.data.result.user_id);
+
+                                // make the request again and reload state on success (needed to run the controller again). reject.config grabs previous call configuration
+                                $injector.get('$http')(reject.config).then(function(resp) {
+                                    deferred.resolve(resp);
+                                    $state.reload();
+                                },function(err) {
+                                    deferred.reject(err);
+                                });
+                            },
+                            function(err) {
+                                // error refreshing go to login
+                                localStorage.clear();
+                                $state.go('login');
+                                return $q.reject(err);
+                            }
+                        );
+                    }
+                    break;
+                case 500:
+                    $rootScope.pushAlerts('Critical Error: Something terrible happened...');
+
+                    if(reject.data.message) {
+                        $rootScope.pushAlerts(reject.data.message);
+                    }
+
+                    console.log(reject);
+                    console.log('Error message: ' + reject.data.message + '. End of critical error.');
+
+                    // Resource deletion
+                    if(reject.data.message == 'The HTTP status code "23000" is not valid.') {
+                        $rootScope.pushAlerts('Resource contains uploaded items. Please delete them first and try again.');
+                    }
+                    return $q.reject(reject);
+                    break;
+                default:
+                    $rootScope.pushAlerts('Error, Please see console for more details.');
+                    console.log(reject);
+                    return $q.reject(reject);
+                    break;
+            }
+            $(".page-loading").addClass("hidden");   
+        }
+    };
+
+    return interceptor;
+}]);
